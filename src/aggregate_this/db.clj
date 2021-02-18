@@ -10,13 +10,14 @@
 (def reddit-post-ddl
   (jdbc/create-table-ddl :redditpost
                          [[:id "integer primary key autoincrement"]
-                          [:link "varchar(255)"]
+                          [:link "text"]
                           [:upvote "integer"]
-                          [:title "varchar(255)"]]))
+                          [:title "text"]]))
 
 (def reddit-postcomment-ddl
   (jdbc/create-table-ddl :redditpostcomment
-                         [[:id "integer primary key autoincrement"]
+                         [[:commentid "text"]
+                          [:parentid "text"]
                           [:postid "integer"]
                           [:user "text"]
                           [:upvote "integer"]
@@ -28,7 +29,11 @@
                        ["PRAGMA foreign_keys = ON;"
                         reddit-post-ddl
                         reddit-postcomment-ddl
-                        "CREATE INDEX link_ix ON redditpost (link);"]))
+                        "CREATE UNIQUE INDEX link_ix ON redditpost (link);"
+                        "CREATE UNIQUE INDEX comment_id_ix ON redditpostcomment (commentid)"]))
+
+(defn select-all-posts []
+  (jdbc/query db-spec ["select * from redditpost"]))
 
 (defn insert-post [post]
   (try
@@ -36,6 +41,17 @@
     (catch org.sqlite.SQLiteException  e
       (println e)
       (println "[*] ignoring duplicate:" post))))
+
+(defn upsert-comment [comment]
+  (try
+    (jdbc/insert! db-spec :redditpostcomment comment)
+    (catch org.sqlite.SQLiteException  e
+      (println "[*] Updating instead of inserting:" comment)
+      (jdbc/update! db-spec :redditpostcomment comment ["commentid = ?" (:commentid comment)]))))
+
+(defn get-post-by-id [post-id]
+  (first (jdbc/query db-spec
+               ["select * from redditpost where id = ?" post-id])))
 
 ;; https://statcompute.wordpress.com/2018/03/12/clojure-and-sqlite/
 (create-tables)
