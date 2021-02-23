@@ -41,16 +41,17 @@
        (map (comp :href :attrs first :content))
        (map scrape-post)))
 
-(defn extract-child-comments [post comment-dom parentid]
-  (let [child-comments (:content comment-dom)]
-    (doall (mapcat #(extract-comment post % parentid) child-comments))))
-
 (defn extract-comment
   ([post comment-dom] (extract-comment post comment-dom ""))
   ([post comment-dom parentid]
-   (let [comment-body (html/select comment-dom [:.usertext-body])
+   (let [extract-child-comments (fn  [post comment-dom parentid]
+           (let [child-comments (:content comment-dom)]
+             (doall (mapcat #(extract-comment post % parentid) child-comments))))
+         comment-body (html/select comment-dom [:.usertext-body])
          comment-attrs (:attrs comment-dom)
-         comment-text (first (:content (first (html/select comment-body [:.md :p]))))
+         ;;comment-text (apply str (mapcat :content (html/select cc-body [:.md :p])))
+         comment-text (apply str (html/select comment-body [:.md]))
+         ;;comment-text (first (:content (first (html/select comment-body [:.md :p]))))
          comment-id (:id comment-attrs)
          username (:data-author comment-attrs)
          upvote (:title (:attrs (first (html/select comment-dom [:.score.unvoted]))))
@@ -78,18 +79,28 @@
 ;; (def f-cs (scrape-comment 1))
 ;; (def f-cc (extract-comment r-post f-c "vvv"))
 
-;; (let [search-result (search-reddit "r/wallstreetbets" "$BB")
-;;       posts (extract-posts search-result)]
-;;   (map db/insert-post posts))
+;; (def c-body (:body (http-get "https://old.reddit.com/r/math/comments/6hu1ph/math_is_just_beautiful/")))
+;; (spit "./test.html" c-body)
+;; (println (html/select (html/html-snippet c-body) [:#thing_t1_dj1pz4t]))
+;; (def cc-body (html/select (html/html-snippet c-body) [:#thing_t1_dj1pz4t]))
+;; (println (first cc-body))
+;; (println (mapcat (comp :content) (html/select cc-body [:.md :p])))
+;; (db/upsert-comment (first (extract-comment {:id 1} (html/select (html/html-snippet c-body) [:#thing_t1_dj1pz4t]) "top")))
 
-;; (let [posts (db/select-all-posts)]
-;;   (doseq [post posts]
-;;     (let [comments (scrape-comment (:id post))]
-;;       (doseq [comment comments]
-;;         (db/upsert-comment comment)))))
+(let [search-result (search-reddit "r/wallstreetbets" "$BB")
+      posts (extract-posts search-result)]
+  (map db/insert-post posts))
 
-;; TODO add edit when the comment contains it
+(let [posts (db/select-all-posts)]
+  (doseq [post posts]
+    (let [comments (scrape-comment (:id post))]
+      (doseq [comment comments]
+        (db/upsert-comment comment)))))
+
 ;; TODO scrape user
 ;; TODO scrape daily .clj
+;; TODO Testing
+;; TODO Frontend
+;; TODO Plug REBL
 
 (defn -main [& args])
