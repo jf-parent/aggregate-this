@@ -1,11 +1,14 @@
 (ns aggregate-this.db
   (:require [clojure.java.jdbc :as jdbc]))
 
-
 (def db-spec
   {:classname "org.sqlite.JDBC"
    :subprotocol "sqlite"
    :subname     "db/database.db"})
+
+;; Models
+(defrecord RPost [id link upvote title])
+(defrecord RComment [commentid parentid postid user upvote body])
 
 (def reddit-post-ddl
   (jdbc/create-table-ddl :redditpost
@@ -50,9 +53,25 @@
         (println "[*] Updating instead of inserting:" comment)
         (jdbc/update! db-spec :redditpostcomment comment ["commentid = ?" (:commentid comment)])))))
 
-(defn get-post-by-id [post-id]
-  (first (jdbc/query db-spec
-               ["select * from redditpost where id = ?" post-id])))
+(defn get-redditpost-by-id [post-id]
+  (map->RPost
+   (first (jdbc/query db-spec
+                      ["select * from redditpost where id = ?" post-id]))))
+
+(defn get-redditpostcomment-by-id [comment-id]
+  (map->RComment
+   (first (jdbc/query db-spec
+                      ["select * from redditpostcomment where commentid = ?" comment-id]))))
+
+(defmulti get-id class)
+(defmethod get-id RPost [r-post] (:id r-post))
+(defmethod get-id RComment [r-comment] (:commentid r-comment))
+
+(defmulti persist class)
+(defmethod persist RPost [r-post]
+  (insert-post r-post))
+(defmethod persist RComment [r-comment]
+  (upsert-comment r-comment))
 
 ;; https://statcompute.wordpress.com/2018/03/12/clojure-and-sqlite/
 ;; (create-tables)

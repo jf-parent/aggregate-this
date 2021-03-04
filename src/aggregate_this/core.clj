@@ -3,6 +3,8 @@
             [aggregate-this.db :as db]
             [clj-http.client :as client]))
 
+(def HOST "https://old.reddit.com")
+
 (defn http-get [url]
   (let [h {"User-Agent" "Mozilla/5.0 (Windows NT 6.1;) Gecko/20100101 Firefox/85.0"}]
     (client/get url {:headers h})))
@@ -27,14 +29,39 @@
        (#(html/select % [:head :title]))
        ((comp first :content first))))
 
+(defn cleanup-url [url]
+  (when (and (not (nil? url))(re-find #"\/r\/" url))
+    (->> url
+         (#(clojure.string/split % #"\/"))
+         drop-last
+         (clojure.string/join "/"))))
+;;(cleanup-url "https://old.reddit.com https://old.reddit.com/r/wallstreetbets/comments/lv5exe/gme_to_the_moon_boiz_lets_get_it/gpbwn9x/")
+
+;; https://old.reddit.com/user/The-Zombie-ZAR
+(defn scrape-user [url]
+  (let [body (:body (http-get url))
+        html-snippet (html/html-snippet body)
+        comments (html/select html-snippet [(html/attr= :data-type "comment")])
+        links (html/select html-snippet [(html/attr= :data-type "link")])]
+    (->>
+     (doall (map #(->> %
+                       :attrs
+                       :data-permalink
+                       cleanup-url)
+                 (merge comments links)))
+     (remove nil?)
+     dedupe)))
+;; (def r-u-links (scrape-user "https://old.reddit.com/user/The-Zombie-ZAR"))
+
 (defn scrape-post [url]
   (let [body (:body (http-get url))
         html-snippet (html/html-snippet body)
         upvote (get-post-upvoted html-snippet)
         title (get-post-title html-snippet)]
-    {:link url
-     :title title
-     :upvote upvote}))
+    (db/map->RPost
+     {:link url
+      :title title
+      :upvote upvote})))
 
 (defn extract-posts [dom]
   (->> dom
@@ -49,18 +76,17 @@
              (doall (mapcat #(extract-comment post % parentid) child-comments))))
          comment-body (html/select comment-dom [:.usertext-body])
          comment-attrs (:attrs comment-dom)
-         ;;comment-text (apply str (mapcat :content (html/select cc-body [:.md :p])))
          comment-text (apply str (html/select comment-body [:.md]))
-         ;;comment-text (first (:content (first (html/select comment-body [:.md :p]))))
          comment-id (:id comment-attrs)
          username (:data-author comment-attrs)
          upvote (:title (:attrs (first (html/select comment-dom [:.score.unvoted]))))
-         comment {:postid (:id post)
-                  :parentid parentid
-                  :commentid comment-id
-                  :user username
-                  :upvote upvote
-                  :body comment-text}]
+         comment (db/map->RComment
+                  {:postid (:id post)
+                   :parentid parentid
+                   :commentid comment-id
+                   :user username
+                   :upvote upvote
+                   :body comment-text})]
      (concat [comment] (extract-child-comments post (first (html/select comment-dom [:.sitetable])) comment-id)))))
 
 (defn scrape-comment [reddit-post-id]
@@ -87,20 +113,22 @@
 ;; (println (mapcat (comp :content) (html/select cc-body [:.md :p])))
 ;; (db/upsert-comment (first (extract-comment {:id 1} (html/select (html/html-snippet c-body) [:#thing_t1_dj1pz4t]) "top")))
 
-(let [search-result (search-reddit "r/wallstreetbets" "$BB")
-      posts (extract-posts search-result)]
-  (map db/insert-post posts))
+;; (def c (db/get-redditpostcomment-by-id "thing_t1_goevqjt"))
+;; (html/select (read-string (:body c)) [:.md])
 
-(let [posts (db/select-all-posts)]
-  (doseq [post posts]
-    (let [comments (scrape-comment (:id post))]
-      (doseq [comment comments]
-        (db/upsert-comment comment)))))
+;; (let [search-result (search-reddit "r/wallstreetbets" "$ZOM")
+;;       posts (extract-posts search-result)]
+;;   (map db/persist posts))
 
-;; TODO scrape user
-;; TODO scrape daily .clj
+;; (let [posts (db/select-all-posts)]
+;;   (doseq [post posts]
+;;     (let [comments (scrape-comment (:id post))]
+;;       (doseq [comment comments]
+;;         (db/persist comment)))))
+
 ;; TODO Testing
 ;; TODO Frontend
+;; TODO scrape daily .clj
 ;; TODO Plug REBL
 
 (defn -main [& args])
