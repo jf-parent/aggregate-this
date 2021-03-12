@@ -30,7 +30,7 @@
        ((comp first :content first))))
 
 (defn cleanup-url [url]
-  (when (and (not (nil? url))(re-find #"\/r\/" url))
+  (when (and (not (nil? url)) (re-find #"\/r\/" url))
     (->> url
          (#(clojure.string/split % #"\/"))
          drop-last
@@ -48,7 +48,7 @@
                        :attrs
                        :data-permalink
                        cleanup-url)
-                 (merge comments links)))
+                 (concat comments links)))
      (remove nil?)
      dedupe)))
 ;; (def r-u-links (scrape-user "https://old.reddit.com/user/The-Zombie-ZAR"))
@@ -126,7 +126,6 @@
 ;;       (doseq [comment comments]
 ;;         (db/persist comment)))))
 
-;; TODO Testing
 ;; TODO Frontend
 ;; TODO scrape daily .clj
 ;; TODO Plug REBL
